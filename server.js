@@ -1,9 +1,9 @@
 import express from "express";
-import puppeteer from "puppeteer";
 
 const app = express();
 
-const URL = "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
+const URL =
+  "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
@@ -37,28 +37,24 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ],
+    const response = await fetch(URL, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120",
+        "Referer":
+          "https://www.fussball.de/mannschaft/1-fc-lokomotive-leipzig-1-fc-lokomotive-leipzig-sachsen/-/saison/2526/team-id/011MIAFLAK000000VTVG0001VTR8C1K7",
+        "X-Requested-With": "XMLHttpRequest"
+      },
     });
 
-    const page = await browser.newPage();
+    let text = await response.text();
 
-    await page.goto(URL, { waitUntil: "networkidle2", timeout: 60000 });
+    // ✅ Schutz entfernen
+    if (text.startsWith(")]}',")) {
+      text = text.substring(5);
+    }
 
-    const text = await page.evaluate(() => document.body.innerText);
-
-    await browser.close();
-
-    // Schutz entfernen
-    const clean = text.startsWith(")]}',") ? text.slice(5) : text;
-
-    const data = JSON.parse(clean);
+    const data = JSON.parse(text);
 
     const matches = data.matches || [];
 
@@ -70,12 +66,13 @@ app.get("/lok.ics", async (req, res) => {
   } catch (err) {
     console.error(err);
 
-    // 👉 WICHTIG: Fehler sichtbar machen
+    // 👉 Fehler sichtbar machen (wichtig!)
     res.set("Content-Type", "text/plain");
     res.send("ERROR:\n" + err.toString());
   }
 });
 
+// ✅ wichtig für Render
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
