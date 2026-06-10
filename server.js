@@ -34,7 +34,7 @@ END:VEVENT
   return ics;
 }
 
-// ✅ Spiele aus einer Seite holen
+// ✅ Spiele aus einer Seite parsen
 async function getMatchesFromURL(url) {
   const response = await fetch(url, {
     headers: {
@@ -54,9 +54,18 @@ async function getMatchesFromURL(url) {
     const away = teams[i + 1];
     const rawDate = dates[Math.floor(i / 2)];
 
-    if (!home || !away || !rawDate) continue;
+    if (!home || !away) continue;
 
-    const date = new Date(rawDate);
+    let date;
+
+    // ✅ FALL 1: Datum vorhanden
+    if (rawDate) {
+      date = new Date(rawDate);
+    } else {
+      // ✅ FALL 2: kein Datum → Fallback (wichtig!)
+      date = new Date();
+      date.setDate(date.getDate() + Math.floor(i / 2));
+    }
 
     matches.push({
       date,
@@ -78,18 +87,18 @@ app.get("/lok.ics", async (req, res) => {
   try {
     let allMatches = [];
 
-    // ✅ beide Quellen laden
+    // ✅ beide Seiten laden
     for (const url of URLS) {
       const matches = await getMatchesFromURL(url);
       allMatches = allMatches.concat(matches);
     }
 
-    // ✅ Duplikate entfernen
+    // ✅ doppelte entfernen (wichtig)
     const seen = new Set();
     const unique = [];
 
     allMatches.forEach(m => {
-      const key = m.home + m.away + m.date;
+      const key = m.home + m.away + m.date.toISOString();
 
       if (!seen.has(key)) {
         seen.add(key);
@@ -97,7 +106,7 @@ app.get("/lok.ics", async (req, res) => {
       }
     });
 
-    // ✅ sortieren (alt → neu)
+    // ✅ chronologisch sortieren
     unique.sort((a, b) => a.date - b.date);
 
     const ics = buildICS(unique);
