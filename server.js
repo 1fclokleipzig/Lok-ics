@@ -4,12 +4,11 @@ const app = express();
 
 const URL = "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27";
 
-// ✅ ICS erstellen
+// ✅ ICS bauen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
-PRODID:-//Lok Leipzig//DE
 `;
 
   if (matches.length === 0) {
@@ -50,22 +49,25 @@ app.get("/lok.ics", async (req, res) => {
 
     const matches = [];
 
-    // ✅ FINAL ROBUSTER PARSER
-    const rows = [...html.matchAll(/<tr[^>]*data-dt="[^"]+"[^>]*>.*?<\/tr>/gs)];
+    // ✅ FLEXIBLER PARSER
+    const blocks = html.split('kick__v100-gameCell');
 
-    rows.forEach(rowMatch => {
-      const row = rowMatch[0];
+    blocks.forEach(block => {
+      const teamMatches = [...block.matchAll(/>([^<>]+)<\/span>/g)];
 
-      const dateMatch = row.match(/data-dt="([^"]+)"/);
-      const teams = [...row.matchAll(/class="[^"]*team[^"]*">([^<]+)</g)];
+      if (teamMatches.length < 2) return;
 
-      if (!dateMatch || teams.length < 2) return;
+      const home = teamMatches[0][1].trim();
+      const away = teamMatches[1][1].trim();
+
+      // Datum suchen
+      const dateMatch = block.match(/data-dt="([^"]+)"/);
+
+      if (!dateMatch) return;
 
       const date = new Date(dateMatch[1]);
-      const home = teams[0][1].trim();
-      const away = teams[1][1].trim();
 
-      if (!isNaN(date) && home && away) {
+      if (home && away && !isNaN(date)) {
         matches.push({ date, home, away });
       }
     });
@@ -76,7 +78,6 @@ app.get("/lok.ics", async (req, res) => {
     res.send(ics);
 
   } catch (err) {
-    // ✅ FALLBACK → Server crasht NIE
     const fallback = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
