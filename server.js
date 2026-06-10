@@ -14,6 +14,8 @@ PRODID:-//Lok Leipzig//DE
 `;
 
   matches.forEach((g) => {
+    if (!g.matchDateTime) return;
+
     const dt = new Date(g.matchDateTime);
     const dtStart = dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
@@ -36,22 +38,30 @@ END:VEVENT
 app.get("/lok.ics", async (req, res) => {
   try {
     const browser = await puppeteer.launch({
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ],
     });
 
     const page = await browser.newPage();
 
-    await page.goto(URL, { waitUntil: "networkidle2" });
+    await page.goto(URL, { waitUntil: "networkidle2", timeout: 60000 });
 
     const text = await page.evaluate(() => document.body.innerText);
 
     await browser.close();
 
     // Schutz entfernen
-    const clean = text.startsWith(")]}',") ? text.substring(5) : text;
+    const clean = text.startsWith(")]}',") ? text.slice(5) : text;
+
     const data = JSON.parse(clean);
 
     const matches = data.matches || [];
+
     const ics = buildICS(matches);
 
     res.set("Content-Type", "text/calendar");
@@ -59,7 +69,10 @@ app.get("/lok.ics", async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.send("Error generating calendar");
+
+    // 👉 WICHTIG: Fehler sichtbar machen
+    res.set("Content-Type", "text/plain");
+    res.send("ERROR:\n" + err.toString());
   }
 });
 
