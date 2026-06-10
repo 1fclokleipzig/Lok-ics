@@ -14,7 +14,6 @@ PRODID:-//Lok Leipzig//DE
 `;
 
   if (matches.length === 0) {
-    // 👉 Fallback Event damit Kalender nie leer ist
     ics += `
 BEGIN:VEVENT
 DTSTART:20250101T120000Z
@@ -51,17 +50,23 @@ app.get("/lok.ics", async (req, res) => {
     const response = await fetch(URL, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Referer": "https://www.fussball.de/",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120",
+        "Referer":
+          "https://www.fussball.de/mannschaft/1-fc-lokomotive-leipzig-1-fc-lokomotive-leipzig-sachsen/-/saison/2526/team-id/011MIAFLAK000000VTVG0001VTR8C1K7",
         "X-Requested-With": "XMLHttpRequest"
       },
     });
 
     let text = await response.text();
 
-    // 👉 falls fussball.de blockt → zeigt trotzdem etwas
+    // 🔍 DEBUG: Wenn keine JSON Antwort
     if (!text || text.length < 10) {
       throw new Error("Leere Antwort von fussball.de");
+    }
+
+    // 👉 Prüfen ob es wirklich JSON ist
+    if (!text.startsWith("{") && !text.startsWith(")]}")) {
+      throw new Error("Keine JSON Antwort:\n" + text.substring(0, 200));
     }
 
     // 👉 Schutz entfernen
@@ -73,7 +78,7 @@ app.get("/lok.ics", async (req, res) => {
     try {
       data = JSON.parse(text);
     } catch (e) {
-      throw new Error("JSON Parsing fehlgeschlagen");
+      throw new Error("JSON Parsing fehlgeschlagen:\n" + text.substring(0, 200));
     }
 
     const matches = data.matches || [];
@@ -86,7 +91,7 @@ app.get("/lok.ics", async (req, res) => {
   } catch (err) {
     console.error(err);
 
-    // ✅ WICHTIG: Server crasht NIE mehr
+    // ✅ Fehler als Kalender ausgeben (damit du ihn IMMER siehst)
     const fallback = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
