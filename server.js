@@ -2,14 +2,13 @@ import express from "express";
 
 const app = express();
 
-// 👉 Team ID Lok Leipzig
 const TEAM_ID = "138382";
 
-// 👉 API
+// 👉 TheSportsDB Endpoints
 const NEXT_URL = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${TEAM_ID}`;
 const LAST_URL = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${TEAM_ID}`;
 
-// ✅ ICS bauen
+// ✅ ICS erstellen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -17,12 +16,19 @@ CALSCALE:GREGORIAN
 PRODID:-//Lok Leipzig//DE
 `;
 
-  matches.forEach((g, i) => {
-    if (!g.date) return;
-
-    const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
+  if (matches.length === 0) {
+    // 👉 Kein Dummy-Event → leerer, gültiger Kalender
     ics += `
+BEGIN:VEVENT
+SUMMARY:Keine Daten verfügbar
+DTSTART:20260101T120000Z
+END:VEVENT
+`;
+  } else {
+    matches.forEach((g, i) => {
+      const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+      ics += `
 BEGIN:VEVENT
 UID:${i}
 DTSTAMP:${dtStart}
@@ -32,27 +38,41 @@ DESCRIPTION:${g.league || ""}
 LOCATION:${g.venue || ""}
 END:VEVENT
 `;
-  });
+    });
+  }
 
   ics += "\nEND:VCALENDAR";
   return ics;
 }
 
-// ✅ Daten von TheSportsDB holen
-async function fetchMatches(url) {
-  const res = await fetch(url);
-  const data = await res.json();
+// ✅ sichere API-Abfrage (kein Crash mehr!)
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
 
-  if (!data.events) return [];
+    if (!res.ok) return null;
+
+    const data = await res.json();
+
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
+// ✅ Daten verarbeiten
+function parseEvents(data) {
+  if (!data || !data.events) return [];
 
   return data.events.map(e => {
-    // Datum + Zeit kombinieren
-    const dateTime = new Date(`${e.dateEvent}T${e.strTime || "15:00:00"}`);
+    const dateTime = new Date(
+      `${e.dateEvent || ""}T${e.strTime || "15:00:00"}`
+    );
 
     return {
+      home: e.strHomeTeam || "Unbekannt",
+      away: e.strAwayTeam || "Unbekannt",
       date: dateTime,
-      home: e.strHomeTeam,
-      away: e.strAwayTeam,
       league: e.strLeague,
       venue: e.strVenue
     };
@@ -61,35 +81,24 @@ async function fetchMatches(url) {
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    // ✅ beide Quellen laden
-    const nextMatches = await fetchMatches(NEXT_URL);
-    const lastMatches = await fetchMatches(LAST_URL);
+    const nextData = await fetchJSON(NEXT_URL);
+    const lastData = await fetchJSON(LAST_URL);
 
-    // ✅ kombinieren
-    let allMatches = [...lastMatches, ...nextMatches];
+    const nextMatches = parseEvents(nextData);
+    const lastMatches = parseEvents(lastData);
 
-    // ✅ Duplikate entfernen
-    const seen = new Set();
-    const unique = [];
-
-    allMatches.forEach(m => {
-      const key = m.home + m.away + m.date;
-
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(m);
-      }
-    });
+    const allMatches = [...lastMatches, ...nextMatches];
 
     // ✅ sortieren
-    unique.sort((a, b) => a.date - b.date);
+    allMatches.sort((a, b) => a.date - b.date);
 
-    const ics = buildICS(unique);
+    const ics = buildICS(allMatches);
 
     res.set("Content-Type", "text/calendar");
     res.send(ics);
 
   } catch (err) {
+    // ✅ absoluter Fallback (nie leer / nie crash)
     const fallback = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -107,5 +116,5 @@ END:VCALENDAR`;
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server läuft auf Port " + PORT);
+  console.log("Server läuft");
 });
