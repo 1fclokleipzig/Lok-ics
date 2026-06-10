@@ -4,11 +4,12 @@ const app = express();
 
 const URL = "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27";
 
-// ✅ ICS bauen
+// ✅ ICS erstellen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
+PRODID:-//Lok Leipzig//DE
 `;
 
   if (matches.length === 0) {
@@ -27,6 +28,7 @@ BEGIN:VEVENT
 UID:${i}
 DTSTART:${dtStart}
 SUMMARY:${g.home} - ${g.away}
+DESCRIPTION:Kicker Spielplan
 END:VEVENT
 `;
     });
@@ -38,7 +40,6 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    // ✅ fetch nur hier (nicht global!)
     const response = await fetch(URL, {
       headers: {
         "User-Agent": "Mozilla/5.0"
@@ -49,19 +50,25 @@ app.get("/lok.ics", async (req, res) => {
 
     const matches = [];
 
-    const regex = /data-dt="([^"]+)".*?team__name">([^<]+)<.*?team__name">([^<]+)</gs;
+    // ✅ FINAL ROBUSTER PARSER
+    const rows = [...html.matchAll(/<tr[^>]*data-dt="[^"]+"[^>]*>.*?<\/tr>/gs)];
 
-    let match;
+    rows.forEach(rowMatch => {
+      const row = rowMatch[0];
 
-    while ((match = regex.exec(html)) !== null) {
-      const date = new Date(match[1]);
-      const home = match[2].trim();
-      const away = match[3].trim();
+      const dateMatch = row.match(/data-dt="([^"]+)"/);
+      const teams = [...row.matchAll(/class="[^"]*team[^"]*">([^<]+)</g)];
 
-      if (!isNaN(date)) {
+      if (!dateMatch || teams.length < 2) return;
+
+      const date = new Date(dateMatch[1]);
+      const home = teams[0][1].trim();
+      const away = teams[1][1].trim();
+
+      if (!isNaN(date) && home && away) {
         matches.push({ date, home, away });
       }
-    }
+    });
 
     const ics = buildICS(matches);
 
@@ -69,7 +76,7 @@ app.get("/lok.ics", async (req, res) => {
     res.send(ics);
 
   } catch (err) {
-    // ✅ KEIN CRASH MEHR → immer ICS zurückgeben
+    // ✅ FALLBACK → Server crasht NIE
     const fallback = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
