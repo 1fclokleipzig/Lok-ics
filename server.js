@@ -3,30 +3,28 @@ import fetch from "node-fetch";
 
 const app = express();
 
-const TEAM = "Lokomotive Leipzig";
+const URL = "https://www.flashscore.de/team/1-fc-lok-leipzig/WtfIuJd0/begegnungen/";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
-PRODID:-//Lok Leipzig//Spielplan//DE
+PRODID:-//Lok Leipzig//Flashscore//DE
 `;
 
   matches.forEach((g) => {
-    const date = new Date(g.dateEvent + "T" + (g.strTime || "12:00:00"));
-    const dtStart = date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
-    const uid = `lok-${dtStart}-${g.strHomeTeam}-${g.strAwayTeam}`;
+    const uid = `lok-${dtStart}-${g.home}-${g.away}`;
 
     ics += `
 BEGIN:VEVENT
 UID:${uid}
 DTSTAMP:${dtStart}
 DTSTART:${dtStart}
-SUMMARY:${g.strHomeTeam} - ${g.strAwayTeam}
-DESCRIPTION:${g.strLeague}
-LOCATION:${g.strVenue || ""}
+SUMMARY:${g.home} - ${g.away}
+DESCRIPTION:Flashscore
 END:VEVENT
 `;
   });
@@ -37,17 +35,39 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    // nächste Spiele holen
-    const response = await fetch(
-      "https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=133613"
-    );
+    const response = await fetch(URL, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
 
-    const data = await response.json();
+    const html = await response.text();
 
-    // filter nur Lok-Spiele (zur Sicherheit)
-    const matches = (data.events || []).filter(
-      (m) => m.strHomeTeam === TEAM || m.strAwayTeam === TEAM
-    );
+    const matches = [];
+
+    // 🔥 robuster Regex
+    const regex = /event__match.*?event__time\">(.*?)<.*?event__participant--home\">(.*?)<.*?event__participant--away\">(.*?)</gs;
+
+    let match;
+
+    while ((match = regex.exec(html)) !== null) {
+      const rawDate = match[1];
+      const home = match[2].trim();
+      const away = match[3].trim();
+
+      // Datum parsen (Flashscore Format DD.MM. HH:MM)
+      const parts = rawDate.split(/[\.\s:]/);
+
+      if (parts.length < 4) continue;
+
+      const day = parseInt(parts[0]);
+      const month = parseInt(parts[1]) - 1;
+      const hour = parseInt(parts[2]);
+      const minute = parseInt(parts[3]);
+
+      const now = new Date();
+      const date = new Date(now.getFullYear(), month, day, hour, minute);
+
+      matches.push({ date, home, away });
+    }
 
     const ics = buildICS(matches);
 
@@ -61,5 +81,5 @@ app.get("/lok.ics", async (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log("Server läuft auf Port 3000");
+  console.log("Flashscore Server läuft");
 });
