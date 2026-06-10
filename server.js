@@ -3,7 +3,8 @@ import fetch from "node-fetch";
 
 const app = express();
 
-const URL = "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
+const URL =
+  "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
@@ -13,18 +14,20 @@ METHOD:PUBLISH
 PRODID:-//Lok Leipzig//DE
 `;
 
-  matches.forEach(g => {
-    const dt = new Date(g.date);
+  matches.forEach((g) => {
+    if (!g.matchDateTime) return;
+
+    const dt = new Date(g.matchDateTime);
     const dtStart = dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
     ics += `
 BEGIN:VEVENT
-UID:${g.id}
+UID:${g.matchId}
 DTSTAMP:${dtStart}
 DTSTART:${dtStart}
-SUMMARY:${g.home} - ${g.away}
-DESCRIPTION:${g.league}
-LOCATION:${g.location}
+SUMMARY:${g.homeTeamName} - ${g.guestTeamName}
+DESCRIPTION:${g.competitionName || ""}
+LOCATION:${g.venueName || ""}
 END:VEVENT
 `;
   });
@@ -38,26 +41,20 @@ app.get("/lok.ics", async (req, res) => {
     const response = await fetch(URL, {
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "X-Requested-With": "XMLHttpRequest"
-      }
+        "X-Requested-With": "XMLHttpRequest",
+      },
     });
 
     let text = await response.text();
 
-    // ✅ wichtig: Schutz entfernen
-    text = text.replace(/^\)\]\}',?\n?/, "");
+    // ✅ Schutz entfernen (GANZ wichtig!)
+    if (text.startsWith(")]}',")) {
+      text = text.substring(5);
+    }
 
     const data = JSON.parse(text);
 
-    // ✅ richtige Struktur mappen
-    const matches = (data.matchList || []).map(g => ({
-      id: g.matchId,
-      date: g.matchDateTime,
-      home: g.homeTeamName,
-      away: g.guestTeamName,
-      league: g.competitionName || "",
-      location: g.venueName || ""
-    }));
+    const matches = data.matches || [];
 
     const ics = buildICS(matches);
 
@@ -65,7 +62,7 @@ app.get("/lok.ics", async (req, res) => {
     res.send(ics);
 
   } catch (err) {
-    console.error(err);
+    console.error("ERROR:", err);
     res.send("Error generating calendar");
   }
 });
