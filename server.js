@@ -3,10 +3,12 @@ import express from "express";
 const app = express();
 
 app.get("/lok.ics", (req, res) => {
-  res.set("Content-Type", "text/plain");
-  res.send("OK SERVER WORKS");
+  res.send("OK SERVER WORKS ✅");
 });
 
-app.listen(3000, () => {
-  console.log("Server läuft");
+// ✅ WICHTIG für Render!
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("Server läuft auf Port " + PORT);
 });
