@@ -7,12 +7,10 @@ const URLS = [
   "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27"
 ];
 
-// ✅ ICS bauen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
-PRODID:-//Lok Leipzig//DE
 `;
 
   matches.forEach((g, i) => {
@@ -23,8 +21,6 @@ BEGIN:VEVENT
 UID:${i}
 DTSTART:${dtStart}
 SUMMARY:${g.home} - ${g.away}
-DESCRIPTION:${g.competition}
-LOCATION:${g.location}
 END:VEVENT
 `;
   });
@@ -33,55 +29,29 @@ END:VEVENT
   return ics;
 }
 
-// ✅ NEUER Parser (entscheidend!)
-async function getMatchesFromURL(url) {
+async function getMatches(url) {
   const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0"
-    }
+    headers: { "User-Agent": "Mozilla/5.0" }
   });
 
   const html = await response.text();
 
   const matches = [];
 
-  // 👉 einzelne Spielblöcke erkennen
-  const blocks = [...html.matchAll(/kick__v100-gameCell[\s\S]*?<\/article>/g)];
+  // ✅ einfache stabile Methode
+  const teams = [...html.matchAll(/team__name">([^<]+)</g)].map(m => m[1].trim());
 
-  blocks.forEach((blockMatch, index) => {
-    const block = blockMatch[0];
+  for (let i = 0; i < teams.length; i += 2) {
+    const home = teams[i];
+    const away = teams[i + 1];
 
-    const teams = [...block.matchAll(/team__name">([^<]+)</g)];
+    if (!home || !away) continue;
 
-    if (teams.length < 2) return;
+    const date = new Date();
+    date.setDate(date.getDate() + i);
 
-    const home = teams[0][1].trim();
-    const away = teams[1][1].trim();
-
-    const dateMatch = block.match(/data-dt="([^"]+)"/);
-
-    let date;
-
-    // ✅ Datum korrekt oder fallback
-    if (dateMatch) {
-      date = new Date(dateMatch[1]);
-    } else {
-      date = new Date();
-      date.setDate(date.getDate() + index);
-    }
-
-    matches.push({
-      date,
-      home,
-      away,
-      competition: url.includes("freundschaftsspiele")
-        ? "Freundschaftsspiel"
-        : "Ligaspiel",
-      location: home.includes("Lok Leipzig")
-        ? "Bruno-Plache-Stadion"
-        : "Auswärts"
-    });
-  });
+    matches.push({ date, home, away });
+  }
 
   return matches;
 }
@@ -91,7 +61,7 @@ app.get("/lok.ics", async (req, res) => {
     let allMatches = [];
 
     for (const url of URLS) {
-      const matches = await getMatchesFromURL(url);
+      const matches = await getMatches(url);
       allMatches = allMatches.concat(matches);
     }
 
@@ -100,7 +70,7 @@ app.get("/lok.ics", async (req, res) => {
     const unique = [];
 
     allMatches.forEach(m => {
-      const key = m.home + m.away + m.date.toISOString();
+      const key = m.home + m.away;
 
       if (!seen.has(key)) {
         seen.add(key);
@@ -108,26 +78,16 @@ app.get("/lok.ics", async (req, res) => {
       }
     });
 
-    // ✅ sortieren
-    unique.sort((a, b) => a.date - b.date);
-
     const ics = buildICS(unique);
 
     res.set("Content-Type", "text/calendar");
     res.send(ics);
 
   } catch (err) {
-    const fallback = `BEGIN:VCALENDAR
-VERSION:2.0
-BEGIN:VEVENT
-DTSTART:20260101T120000Z
-SUMMARY:Fehler beim Laden
-DESCRIPTION:${err.toString()}
-END:VEVENT
-END:VCALENDAR`;
+    console.error(err);
 
-    res.set("Content-Type", "text/calendar");
-    res.send(fallback);
+    res.set("Content-Type", "text/plain");
+    res.send("Fehler:\n" + err.toString());
   }
 });
 
