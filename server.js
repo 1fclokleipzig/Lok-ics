@@ -3,7 +3,8 @@ import fetch from "node-fetch";
 
 const app = express();
 
-const URL = "https://www.flashscore.de/team/1-fc-lok-leipzig/WtfIuJd0/begegnungen/";
+// 👉 interner Flashscore JSON Endpoint
+const URL = "https://d.flashscore.de/x/feed/fc_t_WtfIuJd0";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
@@ -36,38 +37,34 @@ END:VEVENT
 app.get("/lok.ics", async (req, res) => {
   try {
     const response = await fetch(URL, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
     });
 
-    const html = await response.text();
+    const text = await response.text();
+
+    const lines = text.split("\n");
 
     const matches = [];
 
-    // 🔥 robuster Regex
-    const regex = /event__match.*?event__time\">(.*?)<.*?event__participant--home\">(.*?)<.*?event__participant--away\">(.*?)</gs;
+    lines.forEach(line => {
+      if (line.startsWith("AE")) {
+        // Beispielstruktur Flashscore:
+        const parts = line.split("¬");
 
-    let match;
+        const home = parts.find(p => p.startsWith("AH="))?.replace("AH=", "") || "";
+        const away = parts.find(p => p.startsWith("AA="))?.replace("AA=", "") || "";
+        const time = parts.find(p => p.startsWith("AD="))?.replace("AD=", "");
 
-    while ((match = regex.exec(html)) !== null) {
-      const rawDate = match[1];
-      const home = match[2].trim();
-      const away = match[3].trim();
+        if (!home || !away || !time) return;
 
-      // Datum parsen (Flashscore Format DD.MM. HH:MM)
-      const parts = rawDate.split(/[\.\s:]/);
+        // Zeit in Datum umwandeln
+        const date = new Date(parseInt(time) * 1000);
 
-      if (parts.length < 4) continue;
-
-      const day = parseInt(parts[0]);
-      const month = parseInt(parts[1]) - 1;
-      const hour = parseInt(parts[2]);
-      const minute = parseInt(parts[3]);
-
-      const now = new Date();
-      const date = new Date(now.getFullYear(), month, day, hour, minute);
-
-      matches.push({ date, home, away });
-    }
+        matches.push({ date, home, away });
+      }
+    });
 
     const ics = buildICS(matches);
 
@@ -81,5 +78,5 @@ app.get("/lok.ics", async (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log("Flashscore Server läuft");
+  console.log("Flashscore API Server läuft");
 });
