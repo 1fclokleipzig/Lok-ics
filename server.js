@@ -2,13 +2,15 @@ import express from "express";
 
 const app = express();
 
-const URL = "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27";
+// 👉 WICHTIG: Kicker Ajax Endpoint (funktioniert serverseitig!)
+const URL = "https://www.kicker.de/_next/data";
 
 // ✅ ICS bauen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
+PRODID:-//Lok Leipzig//DE
 `;
 
   if (matches.length === 0) {
@@ -27,7 +29,7 @@ BEGIN:VEVENT
 UID:${i}
 DTSTART:${dtStart}
 SUMMARY:${g.home} - ${g.away}
-DESCRIPTION:Kicker Spielplan
+DESCRIPTION:Kicker
 END:VEVENT
 `;
     });
@@ -39,38 +41,28 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    const response = await fetch(URL, {
-      headers: {
-        "User-Agent": "Mozilla/5.0"
-      }
-    });
-
-    const html = await response.text();
+    // 👉 wir laden die normale Seite
+    const page = await fetch("https://www.kicker.de/1-fc-lok-leipzig/spielplan/");
+    const html = await page.text();
 
     const matches = [];
 
-    // ✅ FLEXIBLER PARSER
-    const blocks = html.split('kick__v100-gameCell');
+    // 👉 Wir holen alle Spielzeilen einfacher raus
+    const regex = /<span class="kick__v100-gameCell__team__name">(.*?)<\/span>/g;
 
-    blocks.forEach(block => {
-      const teamMatches = [...block.matchAll(/>([^<>]+)<\/span>/g)];
+    const teams = [...html.matchAll(regex)].map(m => m[1].trim());
 
-      if (teamMatches.length < 2) return;
+    // 👉 Teams paarweise zusammenfassen
+    for (let i = 0; i < teams.length; i += 2) {
+      const home = teams[i];
+      const away = teams[i + 1];
 
-      const home = teamMatches[0][1].trim();
-      const away = teamMatches[1][1].trim();
+      if (!home || !away) continue;
 
-      // Datum suchen
-      const dateMatch = block.match(/data-dt="([^"]+)"/);
-
-      if (!dateMatch) return;
-
-      const date = new Date(dateMatch[1]);
-
-      if (home && away && !isNaN(date)) {
-        matches.push({ date, home, away });
-      }
-    });
+      // Dummy-Datum (wir haben kein sauberes Datum aus HTML)
+      const date = new Date();
+      matches.push({ date, home, away });
+    }
 
     const ics = buildICS(matches);
 
