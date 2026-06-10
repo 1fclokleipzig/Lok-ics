@@ -21,7 +21,6 @@ PRODID:-//Lok Leipzig//DE
     ics += `
 BEGIN:VEVENT
 UID:${i}
-DTSTAMP:${dtStart}
 DTSTART:${dtStart}
 SUMMARY:${g.home} - ${g.away}
 DESCRIPTION:${g.competition}
@@ -34,7 +33,7 @@ END:VEVENT
   return ics;
 }
 
-// ✅ Spiele aus einer Seite parsen
+// ✅ NEUER Parser (entscheidend!)
 async function getMatchesFromURL(url) {
   const response = await fetch(url, {
     headers: {
@@ -44,27 +43,31 @@ async function getMatchesFromURL(url) {
 
   const html = await response.text();
 
-  const teams = [...html.matchAll(/team__name">([^<]+)</g)].map(m => m[1].trim());
-  const dates = [...html.matchAll(/data-dt="([^"]+)"/g)].map(m => m[1]);
-
   const matches = [];
 
-  for (let i = 0; i < teams.length; i += 2) {
-    const home = teams[i];
-    const away = teams[i + 1];
-    const rawDate = dates[Math.floor(i / 2)];
+  // 👉 einzelne Spielblöcke erkennen
+  const blocks = [...html.matchAll(/kick__v100-gameCell[\s\S]*?<\/article>/g)];
 
-    if (!home || !away) continue;
+  blocks.forEach((blockMatch, index) => {
+    const block = blockMatch[0];
+
+    const teams = [...block.matchAll(/team__name">([^<]+)</g)];
+
+    if (teams.length < 2) return;
+
+    const home = teams[0][1].trim();
+    const away = teams[1][1].trim();
+
+    const dateMatch = block.match(/data-dt="([^"]+)"/);
 
     let date;
 
-    // ✅ FALL 1: Datum vorhanden
-    if (rawDate) {
-      date = new Date(rawDate);
+    // ✅ Datum korrekt oder fallback
+    if (dateMatch) {
+      date = new Date(dateMatch[1]);
     } else {
-      // ✅ FALL 2: kein Datum → Fallback (wichtig!)
       date = new Date();
-      date.setDate(date.getDate() + Math.floor(i / 2));
+      date.setDate(date.getDate() + index);
     }
 
     matches.push({
@@ -78,7 +81,7 @@ async function getMatchesFromURL(url) {
         ? "Bruno-Plache-Stadion"
         : "Auswärts"
     });
-  }
+  });
 
   return matches;
 }
@@ -87,13 +90,12 @@ app.get("/lok.ics", async (req, res) => {
   try {
     let allMatches = [];
 
-    // ✅ beide Seiten laden
     for (const url of URLS) {
       const matches = await getMatchesFromURL(url);
       allMatches = allMatches.concat(matches);
     }
 
-    // ✅ doppelte entfernen (wichtig)
+    // ✅ Duplikate entfernen
     const seen = new Set();
     const unique = [];
 
@@ -106,7 +108,7 @@ app.get("/lok.ics", async (req, res) => {
       }
     });
 
-    // ✅ chronologisch sortieren
+    // ✅ sortieren
     unique.sort((a, b) => a.date - b.date);
 
     const ics = buildICS(unique);
@@ -132,5 +134,5 @@ END:VCALENDAR`;
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server läuft auf Port " + PORT);
+  console.log("Server läuft");
 });
