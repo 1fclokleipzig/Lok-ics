@@ -2,10 +2,8 @@ import express from "express";
 
 const app = express();
 
-// 👉 WICHTIG: Kicker Ajax Endpoint (funktioniert serverseitig!)
-const URL = "https://www.kicker.de/_next/data";
+const URL = "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27";
 
-// ✅ ICS bauen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -16,8 +14,8 @@ PRODID:-//Lok Leipzig//DE
   if (matches.length === 0) {
     ics += `
 BEGIN:VEVENT
-SUMMARY:Keine Spiele gefunden
-DTSTART:20250101T120000Z
+SUMMARY:Noch keine Spiele verfügbar
+DTSTART:20260101T120000Z
 END:VEVENT
 `;
   } else {
@@ -27,9 +25,11 @@ END:VEVENT
       ics += `
 BEGIN:VEVENT
 UID:${i}
+DTSTAMP:${dtStart}
 DTSTART:${dtStart}
 SUMMARY:${g.home} - ${g.away}
-DESCRIPTION:Kicker
+DESCRIPTION:${g.description}
+LOCATION:${g.location}
 END:VEVENT
 `;
     });
@@ -41,27 +41,44 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    // 👉 wir laden die normale Seite
-    const page = await fetch("https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27");
-    const html = await page.text();
+    const response = await fetch(URL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+
+    const html = await response.text();
 
     const matches = [];
+    const now = new Date();
 
-    // 👉 Wir holen alle Spielzeilen einfacher raus
-    const regex = /<span class="kick__v100-gameCell__team__name">(.*?)<\/span>/g;
+    // Teams extrahieren
+    const teams = [...html.matchAll(/team__name">([^<]+)</g)].map(m => m[1].trim());
 
-    const teams = [...html.matchAll(regex)].map(m => m[1].trim());
+    // Datum extrahieren
+    const dates = [...html.matchAll(/data-dt="([^"]+)"/g)].map(m => m[1]);
 
-    // 👉 Teams paarweise zusammenfassen
     for (let i = 0; i < teams.length; i += 2) {
       const home = teams[i];
       const away = teams[i + 1];
+      const rawDate = dates[Math.floor(i / 2)];
 
-      if (!home || !away) continue;
+      if (!home || !away || !rawDate) continue;
 
-      // Dummy-Datum (wir haben kein sauberes Datum aus HTML)
-      const date = new Date();
-      matches.push({ date, home, away });
+      const date = new Date(rawDate);
+
+      // Nur zukünftige Spiele
+      if (date < now) continue;
+
+      const isHome = home.includes("Lok Leipzig");
+
+      matches.push({
+        date,
+        home,
+        away,
+        description: `${home} gegen ${away}`,
+        location: isHome ? "Bruno-Plache-Stadion" : "Auswärts"
+      });
     }
 
     const ics = buildICS(matches);
@@ -73,7 +90,7 @@ app.get("/lok.ics", async (req, res) => {
     const fallback = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
-DTSTART:20250101T120000Z
+DTSTART:20260101T120000Z
 SUMMARY:Fehler beim Laden
 DESCRIPTION:${err.toString()}
 END:VEVENT
