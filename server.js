@@ -3,29 +3,28 @@ import fetch from "node-fetch";
 
 const app = express();
 
-// 👉 interner Flashscore JSON Endpoint
-const URL = "https://d.flashscore.de/x/feed/fc_t_WtfIuJd0";
+const URL = "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
-PRODID:-//Lok Leipzig//Flashscore//DE
+PRODID:-//Lok Leipzig//DE
 `;
 
-  matches.forEach((g) => {
-    const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
-    const uid = `lok-${dtStart}-${g.home}-${g.away}`;
+  matches.forEach(g => {
+    const dt = new Date(g.date);
+    const dtStart = dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
     ics += `
 BEGIN:VEVENT
-UID:${uid}
+UID:${g.id}
 DTSTAMP:${dtStart}
 DTSTART:${dtStart}
 SUMMARY:${g.home} - ${g.away}
-DESCRIPTION:Flashscore
+DESCRIPTION:${g.league}
+LOCATION:${g.location}
 END:VEVENT
 `;
   });
@@ -38,33 +37,27 @@ app.get("/lok.ics", async (req, res) => {
   try {
     const response = await fetch(URL, {
       headers: {
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent": "Mozilla/5.0",
+        "X-Requested-With": "XMLHttpRequest"
       }
     });
 
-    const text = await response.text();
+    let text = await response.text();
 
-    const lines = text.split("\n");
+    // ✅ wichtig: Schutz entfernen
+    text = text.replace(/^\)\]\}',?\n?/, "");
 
-    const matches = [];
+    const data = JSON.parse(text);
 
-    lines.forEach(line => {
-      if (line.startsWith("AE")) {
-        // Beispielstruktur Flashscore:
-        const parts = line.split("¬");
-
-        const home = parts.find(p => p.startsWith("AH="))?.replace("AH=", "") || "";
-        const away = parts.find(p => p.startsWith("AA="))?.replace("AA=", "") || "";
-        const time = parts.find(p => p.startsWith("AD="))?.replace("AD=", "");
-
-        if (!home || !away || !time) return;
-
-        // Zeit in Datum umwandeln
-        const date = new Date(parseInt(time) * 1000);
-
-        matches.push({ date, home, away });
-      }
-    });
+    // ✅ richtige Struktur mappen
+    const matches = (data.matchList || []).map(g => ({
+      id: g.matchId,
+      date: g.matchDateTime,
+      home: g.homeTeamName,
+      away: g.guestTeamName,
+      league: g.competitionName || "",
+      location: g.venueName || ""
+    }));
 
     const ics = buildICS(matches);
 
@@ -77,6 +70,4 @@ app.get("/lok.ics", async (req, res) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log("Flashscore API Server läuft");
-});
+app.listen(3000, () => console.log("Server läuft"));
