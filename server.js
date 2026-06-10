@@ -7,7 +7,7 @@ const URLS = [
   "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27"
 ];
 
-// ✅ ICS erstellen
+// ✅ ICS bauen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -15,18 +15,10 @@ CALSCALE:GREGORIAN
 PRODID:-//Lok Leipzig//DE
 `;
 
-  if (matches.length === 0) {
-    ics += `
-BEGIN:VEVENT
-SUMMARY:Noch keine Spiele verfügbar
-DTSTART:20260101T120000Z
-END:VEVENT
-`;
-  } else {
-    matches.forEach((g, i) => {
-      const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  matches.forEach((g, i) => {
+    const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
-      ics += `
+    ics += `
 BEGIN:VEVENT
 UID:${i}
 DTSTAMP:${dtStart}
@@ -36,13 +28,13 @@ DESCRIPTION:${g.competition}
 LOCATION:${g.location}
 END:VEVENT
 `;
-    });
-  }
+  });
 
   ics += "\nEND:VCALENDAR";
   return ics;
 }
 
+// ✅ Spiele aus einer Seite holen
 async function getMatchesFromURL(url) {
   const response = await fetch(url, {
     headers: {
@@ -69,7 +61,13 @@ async function getMatchesFromURL(url) {
     matches.push({
       date,
       home,
-      away
+      away,
+      competition: url.includes("freundschaftsspiele")
+        ? "Freundschaftsspiel"
+        : "Ligaspiel",
+      location: home.includes("Lok Leipzig")
+        ? "Bruno-Plache-Stadion"
+        : "Auswärts"
     });
   }
 
@@ -86,36 +84,20 @@ app.get("/lok.ics", async (req, res) => {
       allMatches = allMatches.concat(matches);
     }
 
-    const now = new Date();
-
-    // ✅ nur zukünftige Spiele
-    let filtered = allMatches.filter(m => m.date >= now);
-
-    // ✅ doppelte entfernen (wichtig!)
-    const unique = [];
+    // ✅ Duplikate entfernen
     const seen = new Set();
+    const unique = [];
 
-    filtered.forEach(m => {
+    allMatches.forEach(m => {
       const key = m.home + m.away + m.date;
 
       if (!seen.has(key)) {
         seen.add(key);
-
-        const isHome = m.home.includes("Lok Leipzig");
-
-        unique.push({
-          date: m.date,
-          home: m.home,
-          away: m.away,
-          competition: url.includes("freundschaftsspiele")
-            ? "Freundschaftsspiel"
-            : "Ligaspiel",
-          location: isHome ? "Bruno-Plache-Stadion" : "Auswärts"
-        });
+        unique.push(m);
       }
     });
 
-    // ✅ sortieren nach Datum
+    // ✅ sortieren (alt → neu)
     unique.sort((a, b) => a.date - b.date);
 
     const ics = buildICS(unique);
