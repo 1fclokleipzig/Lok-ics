@@ -42,7 +42,7 @@ END:VEVENT
 app.get("/lok.ics", async (req, res) => {
   try {
     // 👉 wir laden die normale Seite
-    const page = await fetch("https://www.kicker.de/1-fc-lok-leipzig/spielplan/");
+    const page = await fetch("https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27");
     const html = await page.text();
 
     const matches = [];
