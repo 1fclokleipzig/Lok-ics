@@ -4,25 +4,33 @@ const app = express();
 
 const URL = "https://www.kicker.de/1-fc-lok-leipzig/spielplan/vereine-freundschaftsspiele/2026-27";
 
+// ✅ ICS bauen
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
 VERSION:2.0
 CALSCALE:GREGORIAN
-PRODID:-//Lok Leipzig//DE
 `;
 
-  matches.forEach((g, index) => {
-    const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
+  if (matches.length === 0) {
     ics += `
 BEGIN:VEVENT
-UID:lok-${index}
-DTSTART:${dtStart}
-SUMMARY:${g.home} - ${g.away}
-DESCRIPTION:Kicker Spielplan
+SUMMARY:Keine Spiele gefunden
+DTSTART:20250101T120000Z
 END:VEVENT
 `;
-  });
+  } else {
+    matches.forEach((g, i) => {
+      const dtStart = g.date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+      ics += `
+BEGIN:VEVENT
+UID:${i}
+DTSTART:${dtStart}
+SUMMARY:${g.home} - ${g.away}
+END:VEVENT
+`;
+    });
+  }
 
   ics += "\nEND:VCALENDAR";
   return ics;
@@ -30,6 +38,7 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
+    // ✅ fetch nur hier (nicht global!)
     const response = await fetch(URL, {
       headers: {
         "User-Agent": "Mozilla/5.0"
@@ -40,19 +49,16 @@ app.get("/lok.ics", async (req, res) => {
 
     const matches = [];
 
-    // ✅ Kicker Spiele erkennen
-    const regex = /data-dt="([^"]+)".*?class="kick__v100-gameCell__team__name">([^<]+)<.*?class="kick__v100-gameCell__team__name">([^<]+)</gs;
+    const regex = /data-dt="([^"]+)".*?team__name">([^<]+)<.*?team__name">([^<]+)</gs;
 
     let match;
 
     while ((match = regex.exec(html)) !== null) {
-      const dateRaw = match[1];
+      const date = new Date(match[1]);
       const home = match[2].trim();
       const away = match[3].trim();
 
-      const date = new Date(dateRaw);
-
-      if (home && away && !isNaN(date)) {
+      if (!isNaN(date)) {
         matches.push({ date, home, away });
       }
     }
@@ -63,8 +69,18 @@ app.get("/lok.ics", async (req, res) => {
     res.send(ics);
 
   } catch (err) {
-    res.set("Content-Type", "text/plain");
-    res.send("Error:\n" + err.toString());
+    // ✅ KEIN CRASH MEHR → immer ICS zurückgeben
+    const fallback = `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+DTSTART:20250101T120000Z
+SUMMARY:Fehler beim Laden
+DESCRIPTION:${err.toString()}
+END:VEVENT
+END:VCALENDAR`;
+
+    res.set("Content-Type", "text/calendar");
+    res.send(fallback);
   }
 });
 
