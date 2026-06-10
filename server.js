@@ -1,6 +1,10 @@
 import express from "express";
+import fetch from "node-fetch";
 
 const app = express();
+
+// ✅ Proxy-Service (um Block zu umgehen)
+const PROXY = "https://api.allorigins.win/raw?url=";
 
 const URL =
   "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
@@ -37,16 +41,12 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    const response = await fetch(URL, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "X-Requested-With": "XMLHttpRequest"
-      },
-    });
+    // ✅ Proxy benutzen
+    const response = await fetch(PROXY + encodeURIComponent(URL));
 
     let text = await response.text();
 
-    // ✅ Schutz entfernen (sehr wichtig!)
+    // ✅ Schutz entfernen
     if (text.startsWith(")]}',")) {
       text = text.substring(5);
     }
@@ -61,11 +61,11 @@ app.get("/lok.ics", async (req, res) => {
     res.send(ics);
 
   } catch (err) {
+    console.error(err);
     res.send("Error generating calendar");
   }
 });
 
-// ✅ wichtig für Render
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
