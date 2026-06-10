@@ -3,8 +3,7 @@ import fetch from "node-fetch";
 
 const app = express();
 
-const TEAM_URL =
-  "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
+const TEAM = "Lokomotive Leipzig";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
@@ -15,21 +14,19 @@ PRODID:-//Lok Leipzig//Spielplan//DE
 `;
 
   matches.forEach((g) => {
-    if (!g.matchDateTime) return;
+    const date = new Date(g.dateEvent + "T" + (g.strTime || "12:00:00"));
+    const dtStart = date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
-    const dt = new Date(g.matchDateTime);
-    const dtStart = dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
-    const uid = `lok-${dtStart}-${g.homeTeamName}-${g.guestTeamName}`;
+    const uid = `lok-${dtStart}-${g.strHomeTeam}-${g.strAwayTeam}`;
 
     ics += `
 BEGIN:VEVENT
 UID:${uid}
 DTSTAMP:${dtStart}
 DTSTART:${dtStart}
-SUMMARY:${g.homeTeamName} - ${g.guestTeamName}
-DESCRIPTION:${g.competitionName || ""}
-LOCATION:${g.venueName || ""}
+SUMMARY:${g.strHomeTeam} - ${g.strAwayTeam}
+DESCRIPTION:${g.strLeague}
+LOCATION:${g.strVenue || ""}
 END:VEVENT
 `;
   });
@@ -40,18 +37,18 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    const response = await fetch(TEAM_URL, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-        "Referer": "https://www.fussball.de/",
-      },
-    });
+    // nächste Spiele holen
+    const response = await fetch(
+      "https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=133613"
+    );
 
-    const text = await response.text();
-    const data = JSON.parse(text);
+    const data = await response.json();
 
-    const matches = data.matches || [];
+    // filter nur Lok-Spiele (zur Sicherheit)
+    const matches = (data.events || []).filter(
+      (m) => m.strHomeTeam === TEAM || m.strAwayTeam === TEAM
+    );
+
     const ics = buildICS(matches);
 
     res.set("Content-Type", "text/calendar");
