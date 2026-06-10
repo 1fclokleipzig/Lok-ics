@@ -1,13 +1,9 @@
 import express from "express";
-import fetch from "node-fetch";
+import puppeteer from "puppeteer";
 
 const app = express();
 
-// ✅ Proxy-Service (um Block zu umgehen)
-const PROXY = "https://api.allorigins.win/raw?url=";
-
-const URL =
-  "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
+const URL = "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
 
 function buildICS(matches) {
   let ics = `BEGIN:VCALENDAR
@@ -18,8 +14,6 @@ PRODID:-//Lok Leipzig//DE
 `;
 
   matches.forEach((g) => {
-    if (!g.matchDateTime) return;
-
     const dt = new Date(g.matchDateTime);
     const dtStart = dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 
@@ -41,20 +35,23 @@ END:VEVENT
 
 app.get("/lok.ics", async (req, res) => {
   try {
-    // ✅ Proxy benutzen
-    const response = await fetch(PROXY + encodeURIComponent(URL));
+    const browser = await puppeteer.launch({
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
 
-    let text = await response.text();
+    const page = await browser.newPage();
 
-    // ✅ Schutz entfernen
-    if (text.startsWith(")]}',")) {
-      text = text.substring(5);
-    }
+    await page.goto(URL, { waitUntil: "networkidle2" });
 
-    const data = JSON.parse(text);
+    const text = await page.evaluate(() => document.body.innerText);
+
+    await browser.close();
+
+    // Schutz entfernen
+    const clean = text.startsWith(")]}',") ? text.substring(5) : text;
+    const data = JSON.parse(clean);
 
     const matches = data.matches || [];
-
     const ics = buildICS(matches);
 
     res.set("Content-Type", "text/calendar");
