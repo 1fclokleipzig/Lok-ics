@@ -1,5 +1,5 @@
 import requests
-from bs4 import BeautifulSoup
+import re
 from datetime import datetime, timedelta
 import pytz
 import hashlib
@@ -7,45 +7,36 @@ import hashlib
 URL = "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7"
 TZ = pytz.timezone("Europe/Berlin")
 
+
 def fetch_games():
     r = requests.get(URL)
-    soup = BeautifulSoup(r.text, "html.parser")
+    text = r.text
 
     games = []
 
-    rows = soup.find_all("tr")
+    # sucht Datum + Uhrzeit + Teams
+    pattern = re.findall(r'(\d{2}\.\d{2}\.\d{4}).*?(\d{2}:\d{2}).*?team-name.*?>(.*?)<.*?team-name.*?>(.*?)<', text, re.DOTALL)
 
-    for row in rows:
-        cols = row.find_all("td")
-
-        if len(cols) < 5:
-            continue
-
+    for match in pattern:
         try:
-            date_text = cols[0].get_text(strip=True)
-            teams = cols[2].get_text(" ", strip=True)
-            league = cols[3].get_text(strip=True)
-            location = cols[4].get_text(strip=True)
+            date, time, home, away = match
 
-            # Datum + Uhrzeit extrahieren
-            parts = date_text.split(" ")
-            if len(parts) >= 2:
-                date = parts[0]
-                time = parts[1]
+            dt = datetime.strptime(f"{date} {time}", "%d.%m.%Y %H:%M")
 
-                dt = datetime.strptime(f"{date} {time}", "%d.%m.%Y %H:%M")
+            teams = f"{home.strip()} vs {away.strip()}"
 
-                uid_raw = f"{date}-{time}-{teams}"
-                uid = hashlib.md5(uid_raw.encode()).hexdigest()
+            uid_raw = f"{date}-{time}-{teams}"
+            uid = hashlib.md5(uid_raw.encode()).hexdigest()
 
-                games.append({
-                    "uid": uid,
-                    "start": dt,
-                    "end": dt + timedelta(hours=2),
-                    "summary": f"⚽ {teams}",
-                    "location": location,
-                    "description": league
-                })
+            games.append({
+                "uid": uid,
+                "start": dt,
+                "end": dt + timedelta(hours=2),
+                "summary": f"⚽ {teams}",
+                "location": "",
+                "description": "Spielplan"
+            })
+
         except:
             continue
 
@@ -81,7 +72,6 @@ def create_ics(games):
         ])
 
     lines.append("END:VCALENDAR")
-
     return "\n".join(lines)
 
 
