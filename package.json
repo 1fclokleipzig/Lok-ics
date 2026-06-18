@@ -1,6 +1,7 @@
 {
   "name": "lok-ics",
   "version": "1.0.0",
+  "description": "Lok Leipzig ICS Feed",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
