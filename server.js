@@ -2,54 +2,77 @@ const express = require("express");
 const fetch = require("node-fetch");
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const URL = "https://www.fussball.de/ajax.team.next.games/-/mode/PAGE/team-id/011MIAFLAK000000VTVG0001VTR8C1K7";
+// Team-ID Lok Leipzig (TheSportsDB)
+const TEAM_ID = "138382";
+
+// API (freie Version)
+const URL = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${TEAM_ID}`;
+
+app.get("/", (req, res) => {
+  res.send("Lok ICS läuft ✅");
+});
 
 app.get("/ics", async (req, res) => {
   try {
     const r = await fetch(URL);
-    const text = await r.text();
-
-    const matches = [...text.matchAll(/(\d{2}\.\d{2}\.\d{4}).*?(\d{2}:\d{2}).*?(?:team-name.*?>\s*([^<]+)).*?(?:team-name.*?>\s*([^<]+))/gs)];
+    const data = await r.json();
 
     let events = "";
 
-    for (const m of matches) {
-      const date = m[1];
-      const time = m[2];
-      const home = m[3];
-      const away = m[4];
-
-      const [d, M, y] = date.split(".");
-      const [h, min] = time.split(":");
-
-      const start = `${y}${M}${d}T${h}${min}00`;
-      const end = `${y}${M}${d}T${h}${min}00`;
-
-      events += `
+    if (!data.events) {
+      events = `
 BEGIN:VEVENT
-UID:${date}-${time}-${home}-${away}
-DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z
-DTSTART:${start}
-DTEND:${end}
-SUMMARY:⚽ ${home} vs ${away}
-LOCATION:
-DESCRIPTION:Spielplan
+SUMMARY:Keine Spiele gefunden
+DTSTART:20260101T120000
+DTEND:20260101T140000
 END:VEVENT`;
+    } else {
+
+      data.events.forEach(ev => {
+
+        const date = ev.dateEvent;       // 2026-07-01
+        const time = ev.strTime || "15:00:00"; // fallback
+
+        const start = new Date(`${date}T${time}`);
+        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+        const format = (d) =>
+          d.toISOString().replace(/[-:]/g, "").split(".")[0];
+
+        const summary = `⚽ ${ev.strHomeTeam} vs ${ev.strAwayTeam}`;
+        const location = ev.strVenue || "";
+        const description = ev.strLeague || "";
+
+        events += `
+BEGIN:VEVENT
+UID:${ev.idEvent}
+DTSTAMP:${format(new Date())}Z
+DTSTART:${format(start)}
+DTEND:${format(end)}
+SUMMARY:${summary}
+DESCRIPTION:${description}
+LOCATION:${location}
+STATUS:CONFIRMED
+END:VEVENT`;
+      });
     }
 
     const ics = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Lok Leipzig//DE
+CALSCALE:GREGORIAN
 ${events}
 END:VCALENDAR`;
 
     res.setHeader("Content-Type", "text/calendar");
     res.send(ics);
 
-  } catch (e) {
-    res.status(500).send("Error");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Fehler beim Laden der Daten");
   }
 });
 
-app.listen(3000, () => console.log("Server läuft"));
+app.listen(PORT, () => console.log("Server läuft auf Port " + PORT));
