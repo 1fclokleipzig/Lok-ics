@@ -6,12 +6,12 @@ const PORT = process.env.PORT || 3000;
 
 const TEAM_ID = "138382";
 
-// nächsten + letzten Spiele holen
 const NEXT_URL = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${TEAM_ID}`;
 const PAST_URL = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${TEAM_ID}`;
 
 function cleanTeamName(name) {
   if (!name) return "";
+
   return name
     .replace("e.V.", "")
     .replace("1. FC", "")
@@ -36,7 +36,7 @@ function createEvent(ev) {
 
   let summary = `${home} vs ${away}`;
 
-  // 👉 Ergebnis einbauen, wenn vorhanden
+  // ✅ Ergebnis automatisch einsetzen
   if (ev.intHomeScore !== null && ev.intAwayScore !== null) {
     summary = `${home} ${ev.intHomeScore}–${ev.intAwayScore} ${away}`;
   }
@@ -70,18 +70,30 @@ app.get("/ics", async (req, res) => {
 
     let events = "";
 
-    // vergangene Spiele (mit Ergebnis)
-    if (pastData.events) {
-      pastData.events.forEach(ev => {
-        events += createEvent(ev);
-      });
-    }
+    // ✅ Alle Spiele zusammenführen
+    const allEvents = [
+      ...(pastData.events || []),
+      ...(nextData.events || [])
+    ];
 
-    // kommende Spiele
-    if (nextData.events) {
-      nextData.events.forEach(ev => {
-        events += createEvent(ev);
-      });
+    // ✅ Nach Datum sortieren
+    allEvents.sort((a, b) => {
+      return new Date(a.dateEvent) - new Date(b.dateEvent);
+    });
+
+    // ✅ Limit (z.B. 20 Spiele)
+    allEvents.slice(0, 20).forEach(ev => {
+      events += createEvent(ev);
+    });
+
+    // fallback (falls nichts kommt)
+    if (!events) {
+      events = `
+BEGIN:VEVENT
+SUMMARY:Keine Spiele gefunden
+DTSTART:20260101T120000
+DTEND:20260101T140000
+END:VEVENT`;
     }
 
     const ics = `BEGIN:VCALENDAR
@@ -101,3 +113,4 @@ END:VCALENDAR`;
 });
 
 app.listen(PORT, () => console.log("Server läuft auf Port " + PORT));
+``
